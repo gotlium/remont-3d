@@ -645,6 +645,26 @@ for(const aperture of data.apertures){
 }
 const fixtureParts=new Map();
 for(const item of data.render_fixtures)fixtureParts.set(item.id,fixture(item,groups.get(item.room)));
+// Ownership follows construction, including unnamed trim and model submeshes.
+for(const [room,group] of groups)group.traverse(o=>{o.userData.ownerRoom=room;});
+for(const {g,aperture} of openingGroups){
+ const rooms=[...new Set(data.walls.filter(w=>w.cuts.some(c=>c.id===aperture.source.id)).map(w=>w.room))];
+ g.userData.rooms=rooms;
+ g.traverse(o=>{o.userData.ownerRoom=aperture.source.room;o.userData.openingRooms=rooms;});
+}
+// Exterior accessories belong solely to their room, even on a shared window.
+for(const {room,grille} of exteriorGrilles)grille.traverse(o=>{o.userData.ownerRoom=room;delete o.userData.openingRooms;});
+// Services can cross their source room boundary; clip only their room view.
+const serviceMaterials=[];
+for(const item of data.render_fixtures.filter(i=>['pipe','gas_pipe','heating_riser','channel','channel_route'].includes(i.kind))){
+ const planes=data.walls.filter(w=>w.room===item.room).map(w=>new THREE.Plane(new THREE.Vector3(-w.normal[0],0,-w.normal[1]),w.normal[0]*w.a[0]+w.normal[1]*w.a[1]));
+ fixtureParts.get(item.id).traverse(o=>{
+  if(!o.isMesh)return;
+  const clone=m=>{const copy=m.clone();serviceMaterials.push({room:item.room,material:copy,planes});return copy;};
+  o.material=Array.isArray(o.material)?o.material.map(clone):clone(o.material);
+ });
+}
+renderer.localClippingEnabled=true;
 scene.updateMatrixWorld(true);
 window.__sceneReport={data_fingerprint:data.data_fingerprint,rooms:data.rooms,walls:data.walls,doors:data.openings.filter(o=>o.kind==='door'),stacking:data.stacking,fixtures:{},structure:[]};
 function updateFixtureReport(){
@@ -799,9 +819,11 @@ function fitView(){
  controls.target.set(x,.4,z);camera.position.set(x,.4+distance,z+.001);controls.update();
 }
 function visibility(){
- for(const [id,g] of groups)g.visible=mode!=='plan'||!selected||id===selected;
+ for(const [id,g] of groups)g.visible=!selected||id===selected;
  if(preset?.section)for(const [id,g] of groups)g.visible=id===selected;
- for(const {g,aperture} of openingGroups){const wall=data.walls.find(w=>w.id===aperture.wall);g.visible=!preset?.section&&(mode!=='plan'||!selected||aperture.source.room===selected||wall.neighbours.includes(selected));if(g.name==='entry'&&g.userData.hinge)g.userData.hinge.rotation.y=mode==='plan'?g.userData.openAngle:0;}
+ for(const {g} of openingGroups){g.visible=!preset?.section&&(!selected||g.userData.rooms.includes(selected));if(g.name==='entry'&&g.userData.hinge)g.userData.hinge.rotation.y=mode==='plan'?g.userData.openAngle:0;}
+ for(const {room,grille} of exteriorGrilles)grille.visible=!selected||room===selected;
+ for(const {room,material,planes} of serviceMaterials)material.clippingPlanes=selected===room?planes:null;
  for(const item of data.render_fixtures)if(['spot','pendant'].includes(item.kind))fixtureParts.get(item.id).visible=mode!=='plan';
  for(const c of ceilings)c.visible=mode!=='plan';
  for(const mesh of wallMeshes){
