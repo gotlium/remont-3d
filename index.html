@@ -57,6 +57,7 @@ const glass=new THREE.MeshStandardMaterial({color:'#bad6dc',transparent:true,opa
 function texture(kind){
  const canvas=document.createElement('canvas');canvas.width=canvas.height=512;
  const ctx=canvas.getContext('2d');let scale=[.6,.6];
+ const readableJoint=['tile','floor','dark_floor'].includes(kind);let groutColour=null;
  ctx.fillStyle=(kind==='tile'||kind==='toilet_tile')?palette.tile:kind==='pvc_plast_decor'?data.finishes.pvc_plast_decor:kind==='toilet_floor'?data.finishes.toilet_floor:kind==='dark_floor'?data.finishes.tile_dark:kind==='floor'?palette.floor:kind==='pvc'?'#f2f1ed':kind==='oak'?palette.oak:kind==='wood'?palette.wood:kind==='wallpaper'?palette.wallpaper:kind==='ceiling'?'#f7f6f2':palette.paint;
  ctx.fillRect(0,0,512,512);
  let seed=731;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
@@ -65,8 +66,12 @@ function texture(kind){
   ctx.fillRect(random()*512,random()*512,kind==='oak'?30+random()*130:kind==='wood'?1:2,kind==='oak'?1:kind==='wood'?30+random()*130:2);
  }
  if(['tile','floor','dark_floor','toilet_tile','toilet_floor'].includes(kind)){
-  scale=kind==='tile'?[1.2,.6]:kind==='toilet_tile'?[.6,.3]:kind==='toilet_floor'?[.3,.3]:[.6,.6];ctx.fillStyle=kind==='tile'?'#82786b':kind==='toilet_floor'?'#e5e5e2':'#9a948a';
-  const gx=.002/scale[0]*512,gy=.002/scale[1]*512;
+  scale=kind==='tile'?[1.2,.6]:kind==='toilet_tile'?[.6,.3]:kind==='toilet_floor'?[.3,.3]:[.6,.6];
+  // Work in linear light: the warm-grey grout has 70% of the tile luminance.
+  const base=kind==='tile'?palette.tile:kind==='dark_floor'?data.finishes.tile_dark:palette.floor;
+  groutColour=readableJoint?'#'+new THREE.Color(base).multiplyScalar(.7).getHexString():kind==='toilet_floor'?'#e5e5e2':'#9a948a';
+  ctx.fillStyle=groutColour;
+  const width=readableJoint?.003:.002,gx=width/scale[0]*512,gy=width/scale[1]*512;
   ctx.fillRect(0,0,gx/2,512);ctx.fillRect(512-gx/2,0,gx/2,512);ctx.fillRect(0,0,512,gy/2);ctx.fillRect(0,512-gy/2,512,gy/2);
  }else if(kind==='pvc_plast_decor'){
   scale=[.25,1.2];
@@ -94,13 +99,36 @@ function texture(kind){
   for(let x=0;x<512;x+=28){ctx.beginPath();ctx.moveTo(x,0);ctx.bezierCurveTo(x+20,160,x-20,350,x,512);ctx.stroke();}
  }
  const map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;map.wrapS=map.wrapT=THREE.RepeatWrapping;
- map.userData.scale=scale;map.userData.groutColour=['tile','floor'].includes(kind)?(kind==='tile'?'#82786b':'#9a948a'):null;map.anisotropy=renderer.capabilities.getMaxAnisotropy();return map;
+ map.userData.scale=scale;map.userData.groutColour=groutColour;
+ if(readableJoint){map.userData.groutWidth=.003;map.userData.minimumJointPixels=2;}
+ map.generateMipmaps=true;map.minFilter=THREE.LinearMipmapLinearFilter;
+ map.anisotropy=renderer.capabilities.getMaxAnisotropy();return map;
 }
 var maps;
 function finish(kind,w,h,offsetX=0,offsetY=0){
  maps??=new Map();if(!maps.has(kind))maps.set(kind,texture(kind));const map=maps.get(kind).clone();
  map.repeat.set(w/map.userData.scale[0],h/map.userData.scale[1]);map.offset.set(offsetX/map.userData.scale[0],offsetY/map.userData.scale[1]);map.needsUpdate=true;
- return new THREE.MeshStandardMaterial({name:kind,map,roughness:kind==='toilet_floor'?.22:kind==='pvc_plast_decor'?.42:kind==='tile'?.48:.85,side:THREE.DoubleSide});
+ const mat=new THREE.MeshStandardMaterial({name:kind,map,roughness:kind==='toilet_floor'?.22:kind==='pvc_plast_decor'?.42:kind==='tile'?.48:.85,side:THREE.DoubleSide});
+ if(map.userData.groutWidth){
+  // Mipmaps alone average subpixel grout away. Widen only its displayed footprint;
+  // vMapUv includes the metre-scaled repeat and the room's grid origin.
+  mat.onBeforeCompile=shader=>{
+   shader.uniforms.jointColour={value:new THREE.Color(map.userData.groutColour)};
+   shader.uniforms.jointWidth={value:new THREE.Vector2(.003/map.userData.scale[0],.003/map.userData.scale[1])};
+   shader.uniforms.jointMinimumPixels={value:2};
+   shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>
+ uniform vec3 jointColour;
+ uniform vec2 jointWidth;
+ uniform float jointMinimumPixels;`).replace('#include <map_fragment>',`#include <map_fragment>
+ vec2 jointPixel=max(fwidth(vMapUv),vec2(0.000001));
+ vec2 jointHalfWidth=max(jointWidth,jointMinimumPixels*jointPixel)*0.5;
+ vec2 jointDistance=min(fract(vMapUv),1.0-fract(vMapUv));
+ vec2 jointCoverage=1.0-smoothstep(jointHalfWidth-jointPixel*0.5,jointHalfWidth+jointPixel*0.5,jointDistance);
+ diffuseColor.rgb=mix(diffuseColor.rgb,jointColour,max(jointCoverage.x,jointCoverage.y));`);
+  };
+  mat.customProgramCacheKey=()=> 'readable-grout-3mm-2px';
+ }
+ return mat;
 }
 function box(parent,w,h,d,x,y,z,mat){
  const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(w,.002),Math.max(h,.002),Math.max(d,.002)),mat);
