@@ -1,6 +1,6 @@
 /* This worker lives at the site root, including /remont-3d/ on Pages. */
-const CACHE = 'remont-pokupki:v1:e342c72edb1ab2002f639ef61bbfde4bf81b450993692fa235a614c72c2bfd79';
-const PAGES = ['pokupki/', 'plan/'].map(path => new URL(path, self.location.href).href);
+const CACHE = 'remont-pokupki:v1:d5587e90a9ef97814db914d80a7de1a8034f70c135ef1501ed4e4e62b5e691d6';
+const PAGES = ['pokupki/', 'plan/', 'elektrika/', 'materialy/'].map(path => new URL(path, self.location.href).href);
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PAGES)).then(() => self.skipWaiting()));
 });
@@ -8,7 +8,7 @@ self.addEventListener('activate', event => { event.waitUntil(self.clients.claim(
 self.addEventListener('message', event => {
   if (event.data === 'CACHE_STATUS') {
     event.waitUntil(caches.open(CACHE).then(cache => Promise.all(PAGES.map(page => cache.match(page)))).then(responses => {
-      event.ports[0].postMessage({ready: responses.every(Boolean), revision: 'e342c72edb1ab2002f639ef61bbfde4bf81b450993692fa235a614c72c2bfd79'});
+      event.ports[0].postMessage({ready: responses.every(Boolean), revision: 'd5587e90a9ef97814db914d80a7de1a8034f70c135ef1501ed4e4e62b5e691d6'});
     }));
   }
 });
