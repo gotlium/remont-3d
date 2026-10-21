@@ -1,5 +1,5 @@
 /* This worker lives at the site root, including /remont-3d/ on Pages. */
-const CACHE = 'remont-pokupki:v1:7b2eaacdfbda958b5bb53a6ea647e1b8f073a9bc204c198a6ce750e5297d43a6';
+const CACHE = 'remont-pokupki:v1:5e92ba754fa67f9421c898b156d3785ce54b95b55051e8cf9116eacfdc90bae5';
 const PAGES = ['pokupki/', 'plan/', 'elektrika/', 'materialy/', 'materialy/материалы-по-комнатам.xlsx'].map(path => new URL(path, self.location.href).href);
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PAGES)).then(() => self.skipWaiting()));
@@ -8,7 +8,7 @@ self.addEventListener('activate', event => { event.waitUntil(self.clients.claim(
 self.addEventListener('message', event => {
   if (event.data === 'CACHE_STATUS') {
     event.waitUntil(caches.open(CACHE).then(cache => Promise.all(PAGES.map(page => cache.match(page)))).then(responses => {
-      event.ports[0].postMessage({ready: responses.every(Boolean), revision: '7b2eaacdfbda958b5bb53a6ea647e1b8f073a9bc204c198a6ce750e5297d43a6'});
+      event.ports[0].postMessage({ready: responses.every(Boolean), revision: '5e92ba754fa67f9421c898b156d3785ce54b95b55051e8cf9116eacfdc90bae5'});
     }));
   }
 });
